@@ -38,55 +38,55 @@ location @404_tag {{
 
 MANIFEST_JSON = 'manifest.json'
 
+def find_image_names(root):
+    for path, dirs, files in os.walk(root, topdown=True):
+        for name in files:
+            if (name == "manifest.json"):
+                (image_path, tag) = os.path.split(path)
+                image_name = image_path.removeprefix(root).strip("/")
+                yield (image_name, tag)
 
 def find_images(root):
     LOGGER.info('Finding images in %s', root)
 
-    for name in os.listdir(root):
-        curr = os.path.join(root, name)
-        LOGGER.info('Looking into %s for tags of %s', curr, name)
-
+    for (name, tag) in find_image_names(root):
+        curr = os.path.join(
+            os.path.join(root, name),
+            tag)
         if not os.path.isdir(curr):
+            LOGGER.info('Not a directory: %s', curr)
             continue
 
-        for tag in os.listdir(curr):
-            curr = os.path.join(root, name, tag)
+        LOGGER.info('Looking into %s for a valid image', curr)
 
-            if not os.path.isdir(curr):
-                LOGGER.info('Not a directory: %s', curr)
-                continue
+        manifest = os.path.join(curr, MANIFEST_JSON)
 
-            LOGGER.info('Looking into %s for a valid image', curr)
+        if not os.path.isfile(manifest):
+            LOGGER.info('No manifest file at %s', manifest)
+            continue
 
-            manifest = os.path.join(curr, MANIFEST_JSON)
+        with open(manifest, 'r') as fd:
+            LOGGER.info('Attempting to load JSON data from %s', manifest)
+            try:
+                data = json.load(fd)
+            except json.JSONDecodeError:
+                LOGGER.info('Failed to decode JSON from %s', manifest)
+                data = None
 
-            if not os.path.isfile(manifest):
-                LOGGER.info('No manifest file at %s', manifest)
-                continue
+        if not data:
+            continue
 
-            with open(manifest, 'r') as fd:
-                LOGGER.info('Attempting to load JSON data from %s', manifest)
-                try:
-                    data = json.load(fd)
-                except json.JSONDecodeError:
-                    LOGGER.info('Failed to decode JSON from %s', manifest)
-                    data = None
+        if data.get('schemaVersion') != 2:
+            LOGGER.info('Invalid schemaVersion in %s', manifest)
+            continue
 
-            if not data:
-                continue
+        if data.get('mediaType') != \
+                'application/vnd.docker.distribution.manifest.v2+json':
+            LOGGER.info('Invalid mediaType in %s', manifest)
+            continue
 
-            if data.get('schemaVersion') != 2:
-                LOGGER.info('Invalid schemaVersion in %s', manifest)
-                continue
-
-            if data.get('mediaType') != \
-                    'application/vnd.docker.distribution.manifest.v2+json':
-                LOGGER.info('Invalid mediaType in %s', manifest)
-                continue
-
-            LOGGER.info('Found image %s:%s in %s', name, tag, curr)
-            yield (name, tag)
-
+        LOGGER.info('Found image %s:%s in %s', name, tag, curr)
+        yield (name, tag)
 
 def create_config(root, server_root, name_prefix, with_constants=True,
                   only_constants=False):
